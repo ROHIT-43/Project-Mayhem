@@ -1,0 +1,146 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'" />
+    <style>
+      html, body { margin: 0; height: 100%; background: #111b21; overflow: hidden; }
+      /* Keep the captured pointer a plain arrow over the whole window. */
+      *, *::before, *::after { cursor: default !important; }
+      .bar {
+        height: 34px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 8px;
+        background: #202c33;
+        color: #e9edef;
+        font: 12px -apple-system, BlinkMacSystemFont, sans-serif;
+        user-select: none;
+      }
+      .title { font-weight: 600; white-space: nowrap; }
+      .tabs { display: flex; gap: 4px; margin-right: auto; margin-left: 4px; }
+      .tabs button { padding: 0 8px; opacity: 0.65; }
+      .tabs button.active { opacity: 1; background: #2a3942; border-color: #00a884; }
+      button {
+        background: transparent;
+        color: #e9edef;
+        border: 1px solid #3b4a54;
+        border-radius: 5px;
+        height: 22px;
+        min-width: 26px;
+        cursor: pointer;
+        font-size: 12px;
+      }
+      button:hover { background: #2a3942; }
+      button.on { background: #00a884; border-color: #00a884; color: #111b21; }
+      input[type="range"] { width: 70px; accent-color: #00a884; }
+      /* Invisible resize zones hugging the window border. macOS never handles
+         the resize, so it never draws a resize cursor over them. */
+      .edge { position: fixed; z-index: 10; }
+      .edge.s { bottom: 0; left: 0; right: 0; height: 10px; }
+      /* Only the corners resize. The side and bottom strips move the window,
+         like the bar does, so a drag never changes the size by accident. */
+      .edge.w { top: 34px; bottom: 0; left: 0; width: 10px; }
+      .edge.e { top: 34px; bottom: 0; right: 0; width: 10px; }
+      .edge.nw, .edge.ne { width: 16px; height: 16px; z-index: 11; }
+      .edge.sw, .edge.se { width: 26px; height: 26px; z-index: 11; }
+      .edge.nw { top: 0; left: 0; }
+      .edge.ne { top: 0; right: 0; }
+      .edge.sw { bottom: 0; left: 0; }
+      .edge.se { bottom: 0; right: 0; }
+    </style>
+  </head>
+  <body>
+    <div class="edge s" data-dir="move"></div>
+    <div class="edge w" data-dir="move"></div>
+    <div class="edge e" data-dir="move"></div>
+    <div class="edge nw" data-dir="nw"></div>
+    <div class="edge ne" data-dir="ne"></div>
+    <div class="edge sw" data-dir="sw"></div>
+    <div class="edge se" data-dir="se"></div>
+    <div class="bar">
+      <span class="title">👻</span>
+      <span class="tabs" id="tabs"></span>
+      <input id="opacity" type="range" min="0.2" max="1" step="0.05" title="See-through level" />
+      <button id="sound" title="Message sounds (off)">🔇</button>
+      <button id="ghost" title="Click-through: mouse passes through (Ctrl+Alt+G to turn off)">👻</button>
+      <button id="reload" title="Reload WhatsApp">↻</button>
+      <button id="hide" title="Hide (Ctrl+Alt+Space to show)">—</button>
+      <button id="quit" title="Quit (Ctrl+Alt+Q)">✕</button>
+    </div>
+    <script>
+      const opacity = document.getElementById("opacity");
+      const ghostBtn = document.getElementById("ghost");
+      const soundBtn = document.getElementById("sound");
+
+      const bar = document.querySelector(".bar");
+      const title = document.querySelector(".title");
+
+      const tabsEl = document.getElementById("tabs");
+
+      function render(s) {
+        opacity.value = s.opacity;
+        ghostBtn.classList.toggle("on", s.clickThrough);
+        title.textContent = s.clickThrough ? "👻 ·" : "👻";
+
+        // Rebuild the tab buttons only when the set of tabs changes.
+        if (s.tabs && tabsEl.childElementCount !== s.tabs.length) {
+          tabsEl.innerHTML = "";
+          s.tabs.forEach((tab, i) => {
+            const b = document.createElement("button");
+            b.textContent = tab.label;
+            b.dataset.id = tab.id;
+            b.title = `Switch to ${tab.label} (Ctrl+Alt+${i + 1})`;
+            b.addEventListener("click", () => window.ghost.showTab(tab.id));
+            tabsEl.appendChild(b);
+          });
+        }
+        for (const b of tabsEl.children) b.classList.toggle("active", b.dataset.id === s.tab);
+      }
+
+      // Press a border zone and move the mouse: the app resizes the window
+      // itself, so the pointer stays a plain arrow throughout.
+      // Only a real mouse release ends the drag. Pressing an edge moves focus
+      // to the window itself, so blur and lostpointercapture fire immediately
+      // and must NOT be treated as the end of the drag.
+      const endResize = () => window.ghost.resizeEnd();
+
+      // Dragging the bar moves the window, through the same mechanism as the
+      // resize zones (a native drag strip would block the top corners).
+      bar.addEventListener("pointerdown", (e) => {
+        if (e.target.closest("button, input, .edge")) return;
+        e.preventDefault();
+        window.ghost.resizeStart("move");
+      });
+      for (const zone of document.querySelectorAll(".edge")) {
+        zone.addEventListener("pointerdown", (e) => {
+          e.preventDefault();
+          window.ghost.resizeStart(zone.dataset.dir);
+        });
+      }
+      document.addEventListener("pointerup", endResize, true);
+      document.addEventListener("pointercancel", endResize, true);
+
+      // While click-through is on the window ignores the mouse, but move events
+      // still arrive here: hovering this bar makes it clickable again, so the
+      // 👻 button can be pressed to come back.
+      bar.addEventListener("mousemove", () => window.ghost.setBarHover(true));
+      bar.addEventListener("mouseleave", () => window.ghost.setBarHover(false));
+
+      opacity.addEventListener("input", () => window.ghost.setOpacity(opacity.value));
+      ghostBtn.addEventListener("click", () => window.ghost.toggleClickThrough());
+      soundBtn.addEventListener("click", () => window.ghost.toggleSound());
+      document.getElementById("reload").addEventListener("click", () => window.ghost.reload());
+      document.getElementById("hide").addEventListener("click", () => window.ghost.hide());
+      document.getElementById("quit").addEventListener("click", () => window.ghost.quit());
+
+      window.ghost.onState(render);
+      window.ghost.onSound((on) => {
+        soundBtn.textContent = on ? "🔔" : "🔇";
+        soundBtn.classList.toggle("on", on);
+      });
+      window.ghost.getState().then(render);
+    </script>
+  </body>
+</html>

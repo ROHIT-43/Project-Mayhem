@@ -1,0 +1,10 @@
+{
+  "name": "ghost-chat",
+  "version": "1.0.0",
+  "description": "WhatsApp Web in a see-through window that is excluded from screen sharing.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "../invisible-notes/node_modules/.bin/electron ."
+  }
+}
